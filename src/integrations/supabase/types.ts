@@ -7,32 +7,215 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
   public: {
     Tables: {
-      [_ in never]: never
+      profiles: {
+        Row: {
+          id: string
+          full_name: string | null
+          avatar_url: string | null
+          currency: string
+          is_admin: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          full_name?: string | null
+          avatar_url?: string | null
+          currency?: string
+          is_admin?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          full_name?: string | null
+          avatar_url?: string | null
+          currency?: string
+          is_admin?: boolean
+          updated_at?: string
+        }
+      }
+      wallets: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          type: 'cash' | 'bank' | 'ewallet' | 'other'
+          balance: number
+          icon: string
+          color: string
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          type: 'cash' | 'bank' | 'ewallet' | 'other'
+          balance?: number
+          icon?: string
+          color?: string
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          name?: string
+          type?: 'cash' | 'bank' | 'ewallet' | 'other'
+          balance?: number
+          icon?: string
+          color?: string
+          is_active?: boolean
+          updated_at?: string
+        }
+      }
+      categories: {
+        Row: {
+          id: string
+          user_id: string | null
+          name: string
+          type: 'income' | 'expense' | 'both'
+          icon: string
+          color: string
+          is_active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id?: string | null
+          name: string
+          type: 'income' | 'expense' | 'both'
+          icon?: string
+          color?: string
+          is_active?: boolean
+          created_at?: string
+        }
+        Update: {
+          name?: string
+          type?: 'income' | 'expense' | 'both'
+          icon?: string
+          color?: string
+          is_active?: boolean
+        }
+      }
+      transactions: {
+        Row: {
+          id: string
+          user_id: string
+          wallet_id: string
+          category_id: string | null
+          type: 'income' | 'expense' | 'transfer'
+          amount: number
+          description: string
+          note: string | null
+          date: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          wallet_id: string
+          category_id?: string | null
+          type: 'income' | 'expense' | 'transfer'
+          amount: number
+          description: string
+          note?: string | null
+          date?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          wallet_id?: string
+          category_id?: string | null
+          type?: 'income' | 'expense' | 'transfer'
+          amount?: number
+          description?: string
+          note?: string | null
+          date?: string
+          updated_at?: string
+        }
+      }
+      budgets: {
+        Row: {
+          id: string
+          user_id: string
+          category_id: string
+          amount_limit: number
+          period_month: number
+          period_year: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          category_id: string
+          amount_limit: number
+          period_month: number
+          period_year: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          amount_limit?: number
+          period_month?: number
+          period_year?: number
+          updated_at?: string
+        }
+      }
+      transfers: {
+        Row: {
+          id: string
+          user_id: string
+          from_wallet_id: string
+          to_wallet_id: string
+          amount: number
+          description: string | null
+          date: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          from_wallet_id: string
+          to_wallet_id: string
+          amount: number
+          description?: string | null
+          date?: string
+          created_at?: string
+        }
+        Update: {
+          amount?: number
+          description?: string | null
+          date?: string
+        }
+      }
     }
     Views: {
-      [_ in never]: never
+      monthly_summary: {
+        Row: {
+          user_id: string
+          month: string
+          total_income: number
+          total_expense: number
+          transaction_count: number
+        }
+      }
     }
-    Functions: {
-      [_ in never]: never
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
+    Functions: Record<string, never>
+    Enums: Record<string, never>
+    CompositeTypes: Record<string, never>
   }
 }
 
 type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
-
 type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
 export type Tables<
@@ -114,42 +297,6 @@ export type TablesUpdate<
       : never
     : never
 
-export type Enums<
-  DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema["Enums"]
-    | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
-> = DefaultSchemaEnumNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
-    : never
-
-export type CompositeTypes<
-  PublicCompositeTypeNameOrOptions extends
-    | keyof DefaultSchema["CompositeTypes"]
-    | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
-> = PublicCompositeTypeNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
-  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
-    : never
-
 export const Constants = {
-  public: {
-    Enums: {},
-  },
+  public: { Enums: {} },
 } as const

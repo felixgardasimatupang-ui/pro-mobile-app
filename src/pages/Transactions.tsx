@@ -1,126 +1,148 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import {
-  TrendingUp, TrendingDown, Plus, Search, Filter,
-  ShoppingBag, Car, Utensils, Zap, Gamepad2, Briefcase,
-  DollarSign, ArrowLeftRight
+  TrendingUp, TrendingDown, Plus, Search, Trash2, Edit2,
+  DollarSign, Calendar,
 } from "lucide-react";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { toast } from "@/hooks/use-toast";
+import {
+  useTransactions,
+  useCreateTransaction,
+  useUpdateTransaction,
+  useDeleteTransaction,
+  TransactionFilters,
+} from "@/hooks/useTransactions";
+import { useWallets } from "@/hooks/useWallets";
+import { useCategories } from "@/hooks/useCategories";
+import { Tables } from "@/integrations/supabase/types";
 
-const categoryIcons: Record<string, any> = {
-  Makanan: Utensils,
-  Transport: Car,
-  Belanja: ShoppingBag,
-  Tagihan: Zap,
-  Hiburan: Gamepad2,
-  Gaji: Briefcase,
-  "Pendapatan Lain": DollarSign,
-  Transfer: ArrowLeftRight,
+type TxType = "income" | "expense";
+type Transaction = Tables<"transactions"> & {
+  categories?: Tables<"categories"> | null;
+  wallets?: Tables<"wallets"> | null;
 };
 
-const categories = {
-  expense: ["Makanan", "Transport", "Belanja", "Tagihan", "Hiburan"],
-  income: ["Gaji", "Pendapatan Lain"],
-};
+const fmt = (n: number) =>
+  new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(n);
 
-const mockTransactions = [
-  { id: 1, name: "Gaji Bulanan", category: "Gaji", amount: 8000000, type: "income", date: "2026-04-01", wallet: "Bank BCA" },
-  { id: 2, name: "Makan Siang", category: "Makanan", amount: 55000, type: "expense", date: "2026-04-01", wallet: "Cash" },
-  { id: 3, name: "Grab", category: "Transport", amount: 35000, type: "expense", date: "2026-03-31", wallet: "GoPay" },
-  { id: 4, name: "Freelance Project", category: "Pendapatan Lain", amount: 2500000, type: "income", date: "2026-03-31", wallet: "Bank BCA" },
-  { id: 5, name: "Tagihan Listrik", category: "Tagihan", amount: 350000, type: "expense", date: "2026-03-30", wallet: "Bank BCA" },
-  { id: 6, name: "Netflix", category: "Hiburan", amount: 54000, type: "expense", date: "2026-03-30", wallet: "GoPay" },
-  { id: 7, name: "Belanja Bulanan", category: "Belanja", amount: 850000, type: "expense", date: "2026-03-29", wallet: "Cash" },
-];
-
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
+const today = () => new Date().toISOString().split("T")[0];
 
 const Transactions = () => {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<"all" | "income" | "expense">("all");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [txType, setTxType] = useState<"income" | "expense">("expense");
+  const [editTx, setEditTx] = useState<Transaction | null>(null);
+
+  // Form state
+  const [txType, setTxType] = useState<TxType>("expense");
   const [txAmount, setTxAmount] = useState("");
   const [txName, setTxName] = useState("");
   const [txCategory, setTxCategory] = useState("");
   const [txWallet, setTxWallet] = useState("");
   const [txNote, setTxNote] = useState("");
+  const [txDate, setTxDate] = useState(today());
 
-  const filtered = mockTransactions.filter((t) => {
-    if (filterType !== "all" && t.type !== filterType) return false;
-    if (search && !t.name.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
-
-  const handleSubmit = () => {
-    if (!txAmount || !txName || !txCategory || !txWallet) {
-      toast({ title: "Error", description: "Harap isi semua field", variant: "destructive" });
-      return;
-    }
-    toast({ title: "Berhasil!", description: "Transaksi berhasil ditambahkan" });
-    setDialogOpen(false);
-    setTxAmount("");
-    setTxName("");
-    setTxCategory("");
-    setTxWallet("");
-    setTxNote("");
+  const filters: TransactionFilters = {
+    type: filterType,
+    search: search || undefined,
   };
+
+  const { data: transactions = [], isLoading } = useTransactions(filters);
+  const { data: wallets = [] } = useWallets();
+  const { data: categories = [] } = useCategories(txType);
+  const createTx = useCreateTransaction();
+  const updateTx = useUpdateTransaction();
+  const deleteTx = useDeleteTransaction();
+
+  const resetForm = () => {
+    setTxType("expense"); setTxAmount(""); setTxName(""); setTxCategory("");
+    setTxWallet(""); setTxNote(""); setTxDate(today()); setEditTx(null);
+  };
+
+  const openEdit = (t: Transaction) => {
+    setEditTx(t);
+    setTxType(t.type as TxType);
+    setTxAmount(String(t.amount));
+    setTxName(t.description);
+    setTxCategory(t.category_id ?? "");
+    setTxWallet(t.wallet_id);
+    setTxNote(t.note ?? "");
+    setTxDate(t.date);
+    setDialogOpen(true);
+  };
+
+  const handleSubmit = async () => {
+    if (!txAmount || !txName || !txWallet) return;
+    const payload = {
+      type: txType,
+      amount: parseFloat(txAmount),
+      description: txName,
+      category_id: txCategory || null,
+      wallet_id: txWallet,
+      note: txNote || null,
+      date: txDate,
+    };
+    if (editTx) {
+      await updateTx.mutateAsync({ id: editTx.id, ...payload });
+    } else {
+      await createTx.mutateAsync(payload);
+    }
+    setDialogOpen(false);
+    resetForm();
+  };
+
+  const isPending = createTx.isPending || updateTx.isPending;
 
   return (
     <div className="px-4 pt-6 pb-4 max-w-lg mx-auto space-y-4 animate-slide-up">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-display font-bold">Transaksi</h1>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
             <Button size="sm" className="rounded-full gap-1">
               <Plus className="h-4 w-4" /> Tambah
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-md mx-4">
+          <DialogContent className="max-w-md mx-4 max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle className="font-display">Tambah Transaksi</DialogTitle>
+              <DialogTitle className="font-display">{editTx ? "Edit Transaksi" : "Tambah Transaksi"}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               {/* Type Toggle */}
               <div className="flex gap-2">
-                <Button
-                  variant={txType === "expense" ? "default" : "outline"}
+                <Button variant={txType === "expense" ? "default" : "outline"}
                   className={`flex-1 ${txType === "expense" ? "bg-expense hover:bg-expense/90" : ""}`}
-                  onClick={() => { setTxType("expense"); setTxCategory(""); }}
-                >
+                  onClick={() => { setTxType("expense"); setTxCategory(""); }}>
                   <TrendingDown className="h-4 w-4 mr-1" /> Pengeluaran
                 </Button>
-                <Button
-                  variant={txType === "income" ? "default" : "outline"}
+                <Button variant={txType === "income" ? "default" : "outline"}
                   className={`flex-1 ${txType === "income" ? "bg-income hover:bg-income/90" : ""}`}
-                  onClick={() => { setTxType("income"); setTxCategory(""); }}
-                >
+                  onClick={() => { setTxType("income"); setTxCategory(""); }}>
                   <TrendingUp className="h-4 w-4 mr-1" /> Pemasukan
                 </Button>
               </div>
 
               <div className="space-y-2">
                 <Label>Jumlah (Rp)</Label>
-                <Input
-                  type="number"
-                  placeholder="0"
-                  className="text-2xl font-display h-14"
-                  value={txAmount}
-                  onChange={(e) => setTxAmount(e.target.value)}
-                />
+                <Input type="number" placeholder="0" className="text-2xl font-display h-14"
+                  value={txAmount} onChange={(e) => setTxAmount(e.target.value)} />
               </div>
 
               <div className="space-y-2">
@@ -134,8 +156,8 @@ const Transactions = () => {
                   <Select value={txCategory} onValueChange={setTxCategory}>
                     <SelectTrigger><SelectValue placeholder="Pilih" /></SelectTrigger>
                     <SelectContent>
-                      {categories[txType].map((c) => (
-                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                      {categories.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.icon} {c.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -145,12 +167,17 @@ const Transactions = () => {
                   <Select value={txWallet} onValueChange={setTxWallet}>
                     <SelectTrigger><SelectValue placeholder="Pilih" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Cash">Cash</SelectItem>
-                      <SelectItem value="Bank BCA">Bank BCA</SelectItem>
-                      <SelectItem value="GoPay">GoPay</SelectItem>
+                      {wallets.map((w) => (
+                        <SelectItem key={w.id} value={w.id}>{w.icon} {w.name}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Tanggal</Label>
+                <Input type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} />
               </div>
 
               <div className="space-y-2">
@@ -158,26 +185,22 @@ const Transactions = () => {
                 <Textarea placeholder="Tambah catatan..." value={txNote} onChange={(e) => setTxNote(e.target.value)} />
               </div>
 
-              <Button className="w-full" onClick={handleSubmit}>Simpan Transaksi</Button>
+              <Button className="w-full" onClick={handleSubmit} disabled={isPending || !txAmount || !txName || !txWallet}>
+                {isPending ? "Menyimpan..." : editTx ? "Perbarui Transaksi" : "Simpan Transaksi"}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Search & Filter */}
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Cari transaksi..."
-            className="pl-9 h-9"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input placeholder="Cari transaksi..." className="pl-9 h-9"
+          value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
-      <Tabs value={filterType} onValueChange={(v) => setFilterType(v as any)}>
+      <Tabs value={filterType} onValueChange={(v) => setFilterType(v as typeof filterType)}>
         <TabsList className="grid w-full grid-cols-3 h-9">
           <TabsTrigger value="all" className="text-xs">Semua</TabsTrigger>
           <TabsTrigger value="income" className="text-xs">Pemasukan</TabsTrigger>
@@ -185,36 +208,64 @@ const Transactions = () => {
         </TabsList>
       </Tabs>
 
-      {/* Transaction List */}
+      {/* List */}
       <div className="space-y-2">
-        {filtered.map((t) => {
-          const Icon = categoryIcons[t.category] || DollarSign;
-          return (
-            <Card key={t.id} className="border-0 shadow-sm">
-              <CardContent className="p-3 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                    t.type === "income" ? "bg-income/10" : "bg-expense/10"
-                  }`}>
-                    <Icon className={`h-4 w-4 ${t.type === "income" ? "text-income" : "text-expense"}`} />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{t.name}</p>
-                    <p className="text-[10px] text-muted-foreground">{t.category} · {t.wallet} · {t.date}</p>
-                  </div>
-                </div>
-                <span className={`text-sm font-semibold ${t.type === "income" ? "text-income" : "text-expense"}`}>
-                  {t.type === "income" ? "+" : "-"}{formatCurrency(t.amount)}
-                </span>
-              </CardContent>
-            </Card>
-          );
-        })}
-        {filtered.length === 0 && (
-          <div className="text-center py-10 text-muted-foreground text-sm">
+        {isLoading ? (
+          [1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-16 rounded-xl" />)
+        ) : transactions.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground text-sm">
+            <DollarSign className="h-10 w-10 mx-auto mb-2 opacity-20" />
             Tidak ada transaksi ditemukan
           </div>
-        )}
+        ) : transactions.map((t) => (
+          <Card key={t.id} className="border-0 shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-3 flex items-center justify-between">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0 ${
+                  t.type === "income" ? "bg-income/10" : "bg-expense/10"
+                }`}>
+                  {t.categories?.icon ?? "💸"}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{t.description}</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {t.categories?.name ?? "—"} · {t.wallets?.name} · {t.date}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                <span className={`text-sm font-semibold ${t.type === "income" ? "text-income" : "text-expense"}`}>
+                  {t.type === "income" ? "+" : "-"}{fmt(t.amount)}
+                </span>
+                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(t)}>
+                  <Edit2 className="h-3.5 w-3.5" />
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-expense hover:text-expense">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Hapus Transaksi?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Transaksi "{t.description}" akan dihapus permanen dan saldo wallet akan disesuaikan.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Batal</AlertDialogCancel>
+                      <AlertDialogAction className="bg-expense hover:bg-expense/90"
+                        onClick={() => deleteTx.mutate(t.id)}>
+                        Hapus
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
     </div>
   );
