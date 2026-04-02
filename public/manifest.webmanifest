@@ -1,0 +1,16 @@
+{
+  "name": "DompetKu",
+  "short_name": "DompetKu",
+  "description": "Aplikasi pengelolaan keuangan pribadi untuk mobile dan desktop.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f7fb",
+  "theme_color": "#203b66",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48 64x64 128x128 256x256",
+      "type": "image/x-icon"
+    }
+  ]
+}
