@@ -20,14 +20,17 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
 CREATE POLICY "Users can view own profile"
   ON public.profiles FOR SELECT
   USING (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can update own profile"
   ON public.profiles FOR UPDATE
   USING (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
 CREATE POLICY "Users can insert own profile"
   ON public.profiles FOR INSERT
   WITH CHECK (auth.uid() = id);
@@ -50,6 +53,7 @@ CREATE TABLE IF NOT EXISTS public.wallets (
 
 ALTER TABLE public.wallets ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can manage own wallets" ON public.wallets;
 CREATE POLICY "Users can manage own wallets"
   ON public.wallets FOR ALL
   USING (auth.uid() = user_id);
@@ -70,18 +74,22 @@ CREATE TABLE IF NOT EXISTS public.categories (
 
 ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view own and system categories" ON public.categories;
 CREATE POLICY "Users can view own and system categories"
   ON public.categories FOR SELECT
   USING (user_id IS NULL OR auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can manage own categories" ON public.categories;
 CREATE POLICY "Users can manage own categories"
   ON public.categories FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update own categories" ON public.categories;
 CREATE POLICY "Users can update own categories"
   ON public.categories FOR UPDATE
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete own categories" ON public.categories;
 CREATE POLICY "Users can delete own categories"
   ON public.categories FOR DELETE
   USING (auth.uid() = user_id);
@@ -121,6 +129,7 @@ CREATE TABLE IF NOT EXISTS public.transactions (
 
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can manage own transactions" ON public.transactions;
 CREATE POLICY "Users can manage own transactions"
   ON public.transactions FOR ALL
   USING (auth.uid() = user_id);
@@ -147,6 +156,7 @@ CREATE TABLE IF NOT EXISTS public.budgets (
 
 ALTER TABLE public.budgets ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can manage own budgets" ON public.budgets;
 CREATE POLICY "Users can manage own budgets"
   ON public.budgets FOR ALL
   USING (auth.uid() = user_id);
@@ -168,6 +178,7 @@ CREATE TABLE IF NOT EXISTS public.transfers (
 
 ALTER TABLE public.transfers ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can manage own transfers" ON public.transfers;
 CREATE POLICY "Users can manage own transfers"
   ON public.transfers FOR ALL
   USING (auth.uid() = user_id);

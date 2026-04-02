@@ -13,6 +13,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -38,8 +39,8 @@ const Budget = () => {
   const [budgetCategory, setBudgetCategory] = useState("");
   const [budgetLimit, setBudgetLimit] = useState("");
 
-  const { data: budgets = [], isLoading } = useBudgets(month, year);
-  const { data: categories = [] } = useCategories("expense");
+  const { data: budgets = [], isLoading, error: budgetsError } = useBudgets(month, year);
+  const { data: categories = [], isLoading: categoriesLoading, error: categoriesError } = useCategories("expense");
   const createBudget = useCreateBudget();
   const updateBudget = useUpdateBudget();
   const deleteBudget = useDeleteBudget();
@@ -86,7 +87,7 @@ const Budget = () => {
         <h1 className="text-xl font-display font-bold">Anggaran</h1>
         <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
-            <Button size="sm" className="rounded-full gap-1">
+            <Button size="sm" className="rounded-full gap-1" disabled={!editBudget && !categoriesLoading && categories.length === 0}>
               <Plus className="h-4 w-4" /> Tambah
             </Button>
           </DialogTrigger>
@@ -95,9 +96,18 @@ const Budget = () => {
               <DialogTitle className="font-display">{editBudget ? "Edit Anggaran" : "Tambah Anggaran"}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
+              {categoriesError && (
+                <Alert variant="destructive">
+                  <AlertDescription>Gagal memuat kategori: {categoriesError.message}</AlertDescription>
+                </Alert>
+              )}
               <div className="space-y-2">
                 <Label>Kategori</Label>
-                <Select value={budgetCategory} onValueChange={setBudgetCategory} disabled={!!editBudget}>
+                <Select
+                  value={budgetCategory}
+                  onValueChange={setBudgetCategory}
+                  disabled={!!editBudget || categoriesLoading || categories.length === 0}
+                >
                   <SelectTrigger><SelectValue placeholder="Pilih kategori" /></SelectTrigger>
                   <SelectContent>
                     {categories.map((c) => (
@@ -105,6 +115,9 @@ const Budget = () => {
                     ))}
                   </SelectContent>
                 </Select>
+                {!categoriesLoading && categories.length === 0 && (
+                  <p className="text-xs text-muted-foreground">Belum ada kategori pengeluaran yang bisa dipakai untuk anggaran.</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Batas Anggaran (Rp)</Label>
@@ -139,6 +152,11 @@ const Budget = () => {
       </div>
 
       {/* Total Summary */}
+      {budgetsError && (
+        <Alert variant="destructive">
+          <AlertDescription>Gagal memuat anggaran: {budgetsError.message}</AlertDescription>
+        </Alert>
+      )}
       {isLoading ? (
         <Skeleton className="h-28 rounded-2xl" />
       ) : budgets.length > 0 ? (

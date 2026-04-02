@@ -1,14 +1,13 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
 import {
-  TrendingUp, TrendingDown, Plus, Search, Trash2, Edit2,
-  DollarSign, Calendar,
+  TrendingUp, TrendingDown, Plus, Search, Trash2, Edit2, DollarSign,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
@@ -18,6 +17,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -45,6 +45,7 @@ const fmt = (n: number) =>
 const today = () => new Date().toISOString().split("T")[0];
 
 const Transactions = () => {
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<"all" | "income" | "expense">("all");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -64,9 +65,9 @@ const Transactions = () => {
     search: search || undefined,
   };
 
-  const { data: transactions = [], isLoading } = useTransactions(filters);
-  const { data: wallets = [] } = useWallets();
-  const { data: categories = [] } = useCategories(txType);
+  const { data: transactions = [], isLoading, error: transactionsError } = useTransactions(filters);
+  const { data: wallets = [], isLoading: walletsLoading, error: walletsError } = useWallets();
+  const { data: categories = [], isLoading: categoriesLoading, error: categoriesError } = useCategories(txType);
   const createTx = useCreateTransaction();
   const updateTx = useUpdateTransaction();
   const deleteTx = useDeleteTransaction();
@@ -109,6 +110,8 @@ const Transactions = () => {
   };
 
   const isPending = createTx.isPending || updateTx.isPending;
+  const hasWallets = wallets.length > 0;
+  const canSubmit = Boolean(txAmount && txName && txWallet && hasWallets);
 
   return (
     <div className="px-4 pt-6 pb-4 max-w-lg mx-auto space-y-4 animate-slide-up">
@@ -125,14 +128,41 @@ const Transactions = () => {
               <DialogTitle className="font-display">{editTx ? "Edit Transaksi" : "Tambah Transaksi"}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
+              {!hasWallets && !walletsLoading && (
+                <Alert>
+                  <AlertDescription className="space-y-3">
+                    <p>Anda perlu membuat minimal 1 wallet dulu sebelum bisa menambahkan transaksi.</p>
+                    <Button type="button" variant="outline" size="sm" onClick={() => navigate("/settings")}>
+                      Buka Pengaturan Wallet
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {walletsError && (
+                <Alert variant="destructive">
+                  <AlertDescription>Gagal memuat wallet: {walletsError.message}</AlertDescription>
+                </Alert>
+              )}
+
+              {categoriesError && (
+                <Alert variant="destructive">
+                  <AlertDescription>
+                    Gagal memuat kategori. Transaksi masih bisa disimpan tanpa kategori bila wallet tersedia.
+                  </AlertDescription>
+                </Alert>
+              )}
+
               {/* Type Toggle */}
               <div className="flex gap-2">
                 <Button variant={txType === "expense" ? "default" : "outline"}
+                  type="button"
                   className={`flex-1 ${txType === "expense" ? "bg-expense hover:bg-expense/90" : ""}`}
                   onClick={() => { setTxType("expense"); setTxCategory(""); }}>
                   <TrendingDown className="h-4 w-4 mr-1" /> Pengeluaran
                 </Button>
                 <Button variant={txType === "income" ? "default" : "outline"}
+                  type="button"
                   className={`flex-1 ${txType === "income" ? "bg-income hover:bg-income/90" : ""}`}
                   onClick={() => { setTxType("income"); setTxCategory(""); }}>
                   <TrendingUp className="h-4 w-4 mr-1" /> Pemasukan
@@ -152,8 +182,8 @@ const Transactions = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
-                  <Label>Kategori</Label>
-                  <Select value={txCategory} onValueChange={setTxCategory}>
+                  <Label>Kategori (opsional)</Label>
+                  <Select value={txCategory} onValueChange={setTxCategory} disabled={categoriesLoading || categories.length === 0}>
                     <SelectTrigger><SelectValue placeholder="Pilih" /></SelectTrigger>
                     <SelectContent>
                       {categories.map((c) => (
@@ -161,10 +191,13 @@ const Transactions = () => {
                       ))}
                     </SelectContent>
                   </Select>
+                  {!categoriesLoading && categories.length === 0 && (
+                    <p className="text-xs text-muted-foreground">Kategori belum tersedia. Anda tetap bisa simpan tanpa kategori.</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Wallet</Label>
-                  <Select value={txWallet} onValueChange={setTxWallet}>
+                  <Select value={txWallet} onValueChange={setTxWallet} disabled={walletsLoading || !hasWallets}>
                     <SelectTrigger><SelectValue placeholder="Pilih" /></SelectTrigger>
                     <SelectContent>
                       {wallets.map((w) => (
@@ -172,6 +205,9 @@ const Transactions = () => {
                       ))}
                     </SelectContent>
                   </Select>
+                  {!walletsLoading && !hasWallets && (
+                    <p className="text-xs text-muted-foreground">Belum ada wallet aktif. Tambahkan wallet di halaman Pengaturan.</p>
+                  )}
                 </div>
               </div>
 
@@ -185,7 +221,7 @@ const Transactions = () => {
                 <Textarea placeholder="Tambah catatan..." value={txNote} onChange={(e) => setTxNote(e.target.value)} />
               </div>
 
-              <Button className="w-full" onClick={handleSubmit} disabled={isPending || !txAmount || !txName || !txWallet}>
+              <Button className="w-full" onClick={handleSubmit} disabled={isPending || !canSubmit}>
                 {isPending ? "Menyimpan..." : editTx ? "Perbarui Transaksi" : "Simpan Transaksi"}
               </Button>
             </div>
@@ -210,6 +246,11 @@ const Transactions = () => {
 
       {/* List */}
       <div className="space-y-2">
+        {transactionsError && (
+          <Alert variant="destructive">
+            <AlertDescription>Gagal memuat transaksi: {transactionsError.message}</AlertDescription>
+          </Alert>
+        )}
         {isLoading ? (
           [1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-16 rounded-xl" />)
         ) : transactions.length === 0 ? (
