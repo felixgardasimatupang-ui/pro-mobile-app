@@ -30,7 +30,7 @@ import {
   TransactionFilters,
 } from "@/hooks/useTransactions";
 import { useWallets } from "@/hooks/useWallets";
-import { useCategories } from "@/hooks/useCategories";
+import { useCategories, useCreateCategory } from "@/hooks/useCategories";
 import { Tables } from "@/integrations/supabase/types";
 
 type TxType = "income" | "expense";
@@ -43,6 +43,7 @@ const fmt = (n: number) =>
   new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(n);
 
 const today = () => new Date().toISOString().split("T")[0];
+const CUSTOM_CATEGORY_VALUE = "__custom_category__";
 
 const Transactions = () => {
   const navigate = useNavigate();
@@ -59,6 +60,7 @@ const Transactions = () => {
   const [txWallet, setTxWallet] = useState("");
   const [txNote, setTxNote] = useState("");
   const [txDate, setTxDate] = useState(today());
+  const [customCategoryName, setCustomCategoryName] = useState("");
 
   const filters: TransactionFilters = {
     type: filterType,
@@ -68,13 +70,14 @@ const Transactions = () => {
   const { data: transactions = [], isLoading, error: transactionsError } = useTransactions(filters);
   const { data: wallets = [], isLoading: walletsLoading, error: walletsError } = useWallets();
   const { data: categories = [], isLoading: categoriesLoading, error: categoriesError } = useCategories(txType);
+  const createCategory = useCreateCategory();
   const createTx = useCreateTransaction();
   const updateTx = useUpdateTransaction();
   const deleteTx = useDeleteTransaction();
 
   const resetForm = () => {
     setTxType("expense"); setTxAmount(""); setTxName(""); setTxCategory("");
-    setTxWallet(""); setTxNote(""); setTxDate(today()); setEditTx(null);
+    setTxWallet(""); setTxNote(""); setTxDate(today()); setEditTx(null); setCustomCategoryName("");
   };
 
   const openEdit = (t: Transaction) => {
@@ -91,11 +94,24 @@ const Transactions = () => {
 
   const handleSubmit = async () => {
     if (!txAmount || !txName || !txWallet) return;
+    let categoryId = txCategory || null;
+
+    if (txCategory === CUSTOM_CATEGORY_VALUE) {
+      if (!customCategoryName.trim()) return;
+      const createdCategory = await createCategory.mutateAsync({
+        name: customCategoryName.trim(),
+        type: txType,
+        icon: txType === "income" ? "🏷️" : "🏷️",
+        color: "#6b7280",
+      });
+      categoryId = createdCategory.id;
+    }
+
     const payload = {
       type: txType,
       amount: parseFloat(txAmount),
       description: txName,
-      category_id: txCategory || null,
+      category_id: categoryId,
       wallet_id: txWallet,
       note: txNote || null,
       date: txDate,
@@ -109,9 +125,16 @@ const Transactions = () => {
     resetForm();
   };
 
-  const isPending = createTx.isPending || updateTx.isPending;
+  const isPending = createTx.isPending || updateTx.isPending || createCategory.isPending;
   const hasWallets = wallets.length > 0;
-  const canSubmit = Boolean(txAmount && txName && txWallet && hasWallets);
+  const needsCustomCategory = txCategory === CUSTOM_CATEGORY_VALUE;
+  const canSubmit = Boolean(
+    txAmount &&
+    txName &&
+    txWallet &&
+    hasWallets &&
+    (!needsCustomCategory || customCategoryName.trim())
+  );
 
   return (
     <div className="px-4 pt-6 pb-4 max-w-lg mx-auto space-y-4 animate-slide-up">
@@ -155,16 +178,16 @@ const Transactions = () => {
 
               {/* Type Toggle */}
               <div className="flex gap-2">
-                <Button variant={txType === "expense" ? "default" : "outline"}
+                  <Button variant={txType === "expense" ? "default" : "outline"}
                   type="button"
                   className={`flex-1 ${txType === "expense" ? "bg-expense hover:bg-expense/90" : ""}`}
-                  onClick={() => { setTxType("expense"); setTxCategory(""); }}>
+                  onClick={() => { setTxType("expense"); setTxCategory(""); setCustomCategoryName(""); }}>
                   <TrendingDown className="h-4 w-4 mr-1" /> Pengeluaran
                 </Button>
                 <Button variant={txType === "income" ? "default" : "outline"}
                   type="button"
                   className={`flex-1 ${txType === "income" ? "bg-income hover:bg-income/90" : ""}`}
-                  onClick={() => { setTxType("income"); setTxCategory(""); }}>
+                  onClick={() => { setTxType("income"); setTxCategory(""); setCustomCategoryName(""); }}>
                   <TrendingUp className="h-4 w-4 mr-1" /> Pemasukan
                 </Button>
               </div>
@@ -183,16 +206,24 @@ const Transactions = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label>Kategori (opsional)</Label>
-                  <Select value={txCategory} onValueChange={setTxCategory} disabled={categoriesLoading || categories.length === 0}>
+                  <Select value={txCategory} onValueChange={setTxCategory} disabled={categoriesLoading}>
                     <SelectTrigger><SelectValue placeholder="Pilih" /></SelectTrigger>
                     <SelectContent>
                       {categories.map((c) => (
                         <SelectItem key={c.id} value={c.id}>{c.icon} {c.name}</SelectItem>
                       ))}
+                      <SelectItem value={CUSTOM_CATEGORY_VALUE}>⌨️ Ketik kategori lain</SelectItem>
                     </SelectContent>
                   </Select>
+                  {needsCustomCategory && (
+                    <Input
+                      placeholder="Tulis kategori baru"
+                      value={customCategoryName}
+                      onChange={(e) => setCustomCategoryName(e.target.value)}
+                    />
+                  )}
                   {!categoriesLoading && categories.length === 0 && (
-                    <p className="text-xs text-muted-foreground">Kategori belum tersedia. Anda tetap bisa simpan tanpa kategori.</p>
+                    <p className="text-xs text-muted-foreground">Kategori default belum tersedia. Anda tetap bisa ketik kategori sendiri.</p>
                   )}
                 </div>
                 <div className="space-y-2">

@@ -1,7 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
-import { Tables, TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
+import { Tables } from "@/integrations/supabase/types";
 import { toast } from "@/hooks/use-toast";
+import {
+  buildOptimisticTransaction,
+  enqueueOfflineTransactionCreate,
+  enqueueOfflineTransactionDelete,
+  enqueueOfflineTransactionUpdate,
+  type TransactionPayload,
+  type TransactionUpdatePayload,
+} from "@/lib/offlineTransactionQueue";
 
 export type Transaction = Tables<"transactions"> & {
   categories?: Tables<"categories"> | null;
@@ -16,6 +24,69 @@ export type TransactionFilters = {
   to_date?: string;
   search?: string;
   limit?: number;
+};
+
+const updateTransactionCaches = (qc: ReturnType<typeof useQueryClient>, transaction: Transaction) => {
+  const matchesFilter = (filters?: TransactionFilters) => {
+    if (!filters) return true;
+    if (filters.type && filters.type !== "all" && filters.type !== transaction.type) return false;
+    if (filters.wallet_id && filters.wallet_id !== transaction.wallet_id) return false;
+    if (filters.category_id && filters.category_id !== transaction.category_id) return false;
+    if (filters.from_date && transaction.date < filters.from_date) return false;
+    if (filters.to_date && transaction.date > filters.to_date) return false;
+    if (
+      filters.search &&
+      !transaction.description.toLowerCase().includes(filters.search.toLowerCase())
+    ) return false;
+    return true;
+  };
+
+  const cachedQueries = qc.getQueriesData<Transaction[]>({ queryKey: ["transactions"] });
+
+  cachedQueries.forEach(([queryKey, existing]) => {
+    const filters = queryKey[1] as TransactionFilters | undefined;
+    if (!matchesFilter(filters)) return;
+
+    const next = [transaction, ...(existing ?? [])];
+    qc.setQueryData(queryKey, filters?.limit ? next.slice(0, filters.limit) : next);
+  });
+};
+
+const patchTransactionCaches = (
+  qc: ReturnType<typeof useQueryClient>,
+  transactionId: string,
+  updates: Partial<Transaction>
+) => {
+  const cachedQueries = qc.getQueriesData<Transaction[]>({ queryKey: ["transactions"] });
+
+  cachedQueries.forEach(([queryKey, existing]) => {
+    if (!existing) return;
+
+    qc.setQueryData(
+      queryKey,
+      existing.map((item) =>
+        item.id === transactionId
+          ? {
+              ...item,
+              ...updates,
+              updated_at: new Date().toISOString(),
+            }
+          : item
+      )
+    );
+  });
+};
+
+const removeTransactionFromCaches = (qc: ReturnType<typeof useQueryClient>, transactionId: string) => {
+  const cachedQueries = qc.getQueriesData<Transaction[]>({ queryKey: ["transactions"] });
+
+  cachedQueries.forEach(([queryKey, existing]) => {
+    if (!existing) return;
+    qc.setQueryData(
+      queryKey,
+      existing.filter((item) => item.id !== transactionId)
+    );
+  });
 };
 
 // ─── READ (with related data) ─────────────────────────────────
@@ -136,7 +207,14 @@ export const useExpenseByCategory = (fromDate?: string) =>
 export const useCreateTransaction = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (tx: Omit<TablesInsert<"transactions">, "user_id">) => {
+    mutationFn: async (tx: TransactionPayload) => {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        const queued = enqueueOfflineTransactionCreate(tx);
+        const optimistic = buildOptimisticTransaction(queued) as Transaction;
+        updateTransactionCaches(qc, optimistic);
+        return optimistic;
+      }
+
       const { data: user } = await supabase.auth.getUser();
       if (!user.user) throw new Error("Not authenticated");
       const { data, error } = await supabase
@@ -147,14 +225,21 @@ export const useCreateTransaction = () => {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      const isQueued = typeof data?.id === "string" && data.id.startsWith("offline-");
+
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["wallets"] });
       qc.invalidateQueries({ queryKey: ["total-balance"] });
       qc.invalidateQueries({ queryKey: ["monthly-stats"] });
       qc.invalidateQueries({ queryKey: ["expense-by-category"] });
       qc.invalidateQueries({ queryKey: ["budgets"] });
-      toast({ title: "✅ Berhasil!", description: "Transaksi berhasil ditambahkan" });
+      toast({
+        title: isQueued ? "Disimpan offline" : "✅ Berhasil!",
+        description: isQueued
+          ? "Transaksi disimpan ke antrean offline dan akan disinkronkan saat online."
+          : "Transaksi berhasil ditambahkan",
+      });
     },
     onError: (err: Error) => {
       toast({ title: "Gagal", description: err.message, variant: "destructive" });
@@ -166,7 +251,13 @@ export const useCreateTransaction = () => {
 export const useUpdateTransaction = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...updates }: TablesUpdate<"transactions"> & { id: string }) => {
+    mutationFn: async ({ id, ...updates }: TransactionUpdatePayload) => {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        enqueueOfflineTransactionUpdate({ id, ...updates });
+        patchTransactionCaches(qc, id, updates as Partial<Transaction>);
+        return { id, ...updates } as Tables<"transactions">;
+      }
+
       const { data, error } = await supabase
         .from("transactions")
         .update(updates)
@@ -176,14 +267,20 @@ export const useUpdateTransaction = () => {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["wallets"] });
       qc.invalidateQueries({ queryKey: ["total-balance"] });
       qc.invalidateQueries({ queryKey: ["monthly-stats"] });
       qc.invalidateQueries({ queryKey: ["expense-by-category"] });
       qc.invalidateQueries({ queryKey: ["budgets"] });
-      toast({ title: "✅ Berhasil!", description: "Transaksi berhasil diperbarui" });
+      const isOfflineQueued = data && !("user_id" in data);
+      toast({
+        title: isOfflineQueued ? "Perubahan disimpan offline" : "✅ Berhasil!",
+        description: isOfflineQueued
+          ? "Edit transaksi akan disinkronkan saat koneksi kembali."
+          : "Transaksi berhasil diperbarui",
+      });
     },
     onError: (err: Error) => {
       toast({ title: "Gagal", description: err.message, variant: "destructive" });
@@ -196,17 +293,33 @@ export const useDeleteTransaction = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        enqueueOfflineTransactionDelete({ id });
+        removeTransactionFromCaches(qc, id);
+        return;
+      }
+
       const { error } = await supabase.from("transactions").delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
+      const isOfflineQueued = typeof navigator !== "undefined" && !navigator.onLine;
+      if (!isOfflineQueued) {
+        removeTransactionFromCaches(qc, id);
+      }
+
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["wallets"] });
       qc.invalidateQueries({ queryKey: ["total-balance"] });
       qc.invalidateQueries({ queryKey: ["monthly-stats"] });
       qc.invalidateQueries({ queryKey: ["expense-by-category"] });
       qc.invalidateQueries({ queryKey: ["budgets"] });
-      toast({ title: "✅ Berhasil!", description: "Transaksi berhasil dihapus" });
+      toast({
+        title: isOfflineQueued ? "Hapus disimpan offline" : "✅ Berhasil!",
+        description: isOfflineQueued
+          ? "Penghapusan transaksi akan disinkronkan saat koneksi kembali."
+          : "Transaksi berhasil dihapus",
+      });
     },
     onError: (err: Error) => {
       toast({ title: "Gagal", description: err.message, variant: "destructive" });

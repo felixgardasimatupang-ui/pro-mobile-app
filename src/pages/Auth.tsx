@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
 import { Mail, Lock, Eye, EyeOff, Wallet, ShieldCheck, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { getAppUrl } from "@/lib/appUrl";
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -29,6 +30,7 @@ const Auth = () => {
     () => pendingConfirmationEmail || registerEmail || loginEmail,
     [loginEmail, pendingConfirmationEmail, registerEmail]
   );
+  const appUrl = getAppUrl();
 
   // ─── LOGIN ─────────────────────────────────────────────────────
   const handleLogin = async (e: React.FormEvent) => {
@@ -84,7 +86,7 @@ const Auth = () => {
           full_name: fullName.trim(),
           is_admin: adminCode === "ADMIN2026",
         },
-        emailRedirectTo: window.location.origin + "/dashboard",
+        emailRedirectTo: `${appUrl}/dashboard`,
       },
     });
     setLoading(false);
@@ -124,7 +126,7 @@ const Auth = () => {
       type: "signup",
       email: confirmationEmail.trim(),
       options: {
-        emailRedirectTo: window.location.origin + "/dashboard",
+        emailRedirectTo: `${appUrl}/dashboard`,
       },
     });
     setLoading(false);
@@ -144,7 +146,7 @@ const Auth = () => {
   const handleGoogleLogin = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: window.location.origin + "/dashboard" },
+      options: { redirectTo: `${appUrl}/dashboard` },
     });
     if (error) toast({ title: "Error", description: error.message, variant: "destructive" });
   };

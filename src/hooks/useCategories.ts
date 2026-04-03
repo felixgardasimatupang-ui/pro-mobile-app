@@ -23,10 +23,19 @@ export const useCategories = (type?: "income" | "expense") =>
 
       const { data, error } = await query;
       if (error) throw error;
-      // Return system categories + user's own categories
-      return (data as Category[]).filter(
+      const filtered = (data as Category[]).filter(
         (c) => c.user_id === null || c.user_id === user.user?.id
       );
+
+      const deduped = new Map<string, Category>();
+      filtered.forEach((category) => {
+        const key = `${category.user_id ?? "system"}:${category.type}:${category.name.trim().toLowerCase()}`;
+        if (!deduped.has(key)) {
+          deduped.set(key, category);
+        }
+      });
+
+      return Array.from(deduped.values());
     },
   });
 

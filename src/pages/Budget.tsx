@@ -18,7 +18,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useBudgets, useCreateBudget, useUpdateBudget, useDeleteBudget } from "@/hooks/useBudgets";
-import { useCategories } from "@/hooks/useCategories";
+import { useCategories, useCreateCategory } from "@/hooks/useCategories";
 import { Tables } from "@/integrations/supabase/types";
 
 type Budget = Tables<"budgets"> & {
@@ -30,6 +30,7 @@ const fmt = (n: number) =>
   new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(n);
 
 const now = new Date();
+const CUSTOM_CATEGORY_VALUE = "__custom_budget_category__";
 
 const Budget = () => {
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -38,9 +39,11 @@ const Budget = () => {
   const [editBudget, setEditBudget] = useState<Budget | null>(null);
   const [budgetCategory, setBudgetCategory] = useState("");
   const [budgetLimit, setBudgetLimit] = useState("");
+  const [customCategoryName, setCustomCategoryName] = useState("");
 
   const { data: budgets = [], isLoading, error: budgetsError } = useBudgets(month, year);
   const { data: categories = [], isLoading: categoriesLoading, error: categoriesError } = useCategories("expense");
+  const createCategory = useCreateCategory();
   const createBudget = useCreateBudget();
   const updateBudget = useUpdateBudget();
   const deleteBudget = useDeleteBudget();
@@ -50,7 +53,7 @@ const Budget = () => {
   const totalPct = totalLimit > 0 ? Math.round((totalSpent / totalLimit) * 100) : 0;
 
   const resetForm = () => {
-    setBudgetCategory(""); setBudgetLimit(""); setEditBudget(null);
+    setBudgetCategory(""); setBudgetLimit(""); setEditBudget(null); setCustomCategoryName("");
   };
 
   const openEdit = (b: Budget) => {
@@ -65,8 +68,21 @@ const Budget = () => {
     if (editBudget) {
       await updateBudget.mutateAsync({ id: editBudget.id, amount_limit: parseFloat(budgetLimit) });
     } else {
+      let categoryId = budgetCategory;
+
+      if (budgetCategory === CUSTOM_CATEGORY_VALUE) {
+        if (!customCategoryName.trim()) return;
+        const createdCategory = await createCategory.mutateAsync({
+          name: customCategoryName.trim(),
+          type: "expense",
+          icon: "🏷️",
+          color: "#6b7280",
+        });
+        categoryId = createdCategory.id;
+      }
+
       await createBudget.mutateAsync({
-        category_id: budgetCategory,
+        category_id: categoryId,
         amount_limit: parseFloat(budgetLimit),
         period_month: month,
         period_year: year,
@@ -76,7 +92,8 @@ const Budget = () => {
     resetForm();
   };
 
-  const isPending = createBudget.isPending || updateBudget.isPending;
+  const isPending = createBudget.isPending || updateBudget.isPending || createCategory.isPending;
+  const needsCustomCategory = budgetCategory === CUSTOM_CATEGORY_VALUE;
 
   const monthNames = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 
@@ -87,7 +104,7 @@ const Budget = () => {
         <h1 className="text-xl font-display font-bold">Anggaran</h1>
         <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
-            <Button size="sm" className="rounded-full gap-1" disabled={!editBudget && !categoriesLoading && categories.length === 0}>
+            <Button size="sm" className="rounded-full gap-1" disabled={false}>
               <Plus className="h-4 w-4" /> Tambah
             </Button>
           </DialogTrigger>
@@ -106,24 +123,32 @@ const Budget = () => {
                 <Select
                   value={budgetCategory}
                   onValueChange={setBudgetCategory}
-                  disabled={!!editBudget || categoriesLoading || categories.length === 0}
+                  disabled={!!editBudget || categoriesLoading}
                 >
                   <SelectTrigger><SelectValue placeholder="Pilih kategori" /></SelectTrigger>
                   <SelectContent>
                     {categories.map((c) => (
                       <SelectItem key={c.id} value={c.id}>{c.icon} {c.name}</SelectItem>
                     ))}
+                    <SelectItem value={CUSTOM_CATEGORY_VALUE}>⌨️ Ketik kategori lain</SelectItem>
                   </SelectContent>
                 </Select>
+                {needsCustomCategory && (
+                  <Input
+                    placeholder="Tulis kategori baru"
+                    value={customCategoryName}
+                    onChange={(e) => setCustomCategoryName(e.target.value)}
+                  />
+                )}
                 {!categoriesLoading && categories.length === 0 && (
-                  <p className="text-xs text-muted-foreground">Belum ada kategori pengeluaran yang bisa dipakai untuk anggaran.</p>
+                  <p className="text-xs text-muted-foreground">Kategori default belum tersedia. Anda tetap bisa ketik kategori sendiri.</p>
                 )}
               </div>
               <div className="space-y-2">
                 <Label>Batas Anggaran (Rp)</Label>
                 <Input type="number" placeholder="0" value={budgetLimit} onChange={(e) => setBudgetLimit(e.target.value)} />
               </div>
-              <Button className="w-full" onClick={handleSave} disabled={isPending || !budgetCategory || !budgetLimit}>
+              <Button className="w-full" onClick={handleSave} disabled={isPending || !budgetCategory || !budgetLimit || (needsCustomCategory && !customCategoryName.trim())}>
                 {isPending ? "Menyimpan..." : "Simpan"}
               </Button>
             </div>
