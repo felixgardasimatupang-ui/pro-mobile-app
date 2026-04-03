@@ -120,6 +120,54 @@ Perilaku workflow:
 - Push ke branch lain → deploy preview
 - Sebelum deploy, workflow akan menjalankan `npm ci`, `npm run lint`, dan `npm run test`
 
+#### Push manual ke GitHub
+
+Kalau Anda ingin memicu auto-deploy secara manual lewat push ke GitHub, gunakan langkah ini dari folder project:
+
+```bash
+git status
+git add .
+git commit -m "pesan perubahan anda"
+git push origin main
+```
+
+Penjelasan singkat:
+
+- `git status` untuk melihat file yang berubah
+- `git add .` untuk menyiapkan perubahan
+- `git commit -m "..."` untuk menyimpan riwayat perubahan
+- `git push origin main` untuk mengirim ke GitHub dan memicu deploy production
+
+Jika ingin membuat preview deployment dulu, push ke branch selain `main`:
+
+```bash
+git checkout -b nama-branch-baru
+git add .
+git commit -m "pesan perubahan anda"
+git push origin nama-branch-baru
+```
+
+Setelah push, cek status deploy di tab `Actions` pada GitHub repo.
+
+#### Deploy manual ke Vercel dari lokal
+
+Kalau Anda ingin deploy langsung dari terminal tanpa GitHub Actions:
+
+```bash
+npm install
+npm run build
+vercel login
+vercel link
+vercel
+```
+
+Gunakan:
+
+- `vercel` untuk preview deployment
+- `vercel --prod` untuk production deployment
+
+Kalau project sudah pernah di-link, Anda tidak perlu mengulang `vercel link` setiap kali deploy.
+
 ### Opsi 2: Netlify
 
 1. Push repo ini ke GitHub
