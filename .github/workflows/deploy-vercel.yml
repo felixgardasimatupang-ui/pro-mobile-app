@@ -18,6 +18,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate Vercel Secrets
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          missing_secrets=""
+
+          if [ -z "$VERCEL_TOKEN" ]; then
+            missing_secrets="$missing_secrets VERCEL_TOKEN"
+          fi
+
+          if [ -z "$VERCEL_ORG_ID" ]; then
+            missing_secrets="$missing_secrets VERCEL_ORG_ID"
+          fi
+
+          if [ -z "$VERCEL_PROJECT_ID" ]; then
+            missing_secrets="$missing_secrets VERCEL_PROJECT_ID"
+          fi
+
+          if [ -n "$missing_secrets" ]; then
+            echo "Missing required GitHub Actions secrets:$missing_secrets"
+            echo "Add them in Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
